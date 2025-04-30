@@ -190,12 +190,10 @@ def extract_spec(w):
     # Your code here
     # load
     # take squared absolute values
-    stft = librosa.stft(w)
-
-    spectogram = np.abs(stft) ** 2
-    spectogram_tensor = torch.FloatTensor(spectogram)
-
-    return spectogram_tensor
+    stft_complex = librosa.stft(w, n_fft=2048, hop_length=512)
+    spectogram = np.abs(stft_complex)**2
+    spect_tensor = torch.tensor(spectogram,dtype=torch.float32)
+    return spect_tensor
 
 # %% [markdown]
 # 4. Extract mel-spectrograms
@@ -253,14 +251,11 @@ def extract_q(w):
     cqt = librosa.cqt(
         y=w,
         sr=16000,
-        hop_length = 512,
-        fmin = librosa.note_to_hz('C1')
     )
-    power = np.abs(cqt) ** 2
-    db = librosa.amplitude_to_db(power, ref=np.max)
+    cqt_tensor = torch.tensor(np.abs(cqt), dtype=torch.float32)
 
     #converting to the pytorch tenosr
-    return torch.FloatTensor(db)
+    return cqt_tensor
 
 # %% [markdown]
 # 6. Pitch shift
@@ -283,7 +278,6 @@ def pitch_shift(w, n):
         y=w,
         sr=SAMPLE_RATE,
         n_steps= n,
-        bins_per_octave= 12
     )
     return y_shift
 
