@@ -10,7 +10,7 @@
 
 # %%
 # run this command to install MiDiTok
-# ! pip install miditok
+# !pip install miditok
 
 # %%
 # import required packages
@@ -187,9 +187,9 @@ def sample_next_note(note):
 # - **Output**: perplexity value
 
 # %%
+
 def note_bigram_perplexity(midi_file):
     train_files = [f for f in midi_files if f != midi_file]
-    unigramTransitionProbabilities = note_unigram_probability(train_files)
     bigramTransitions, bigramTransitionProbabilities = note_bigram_probability(train_files)
     
     # Q4: Your code goes here
@@ -200,21 +200,20 @@ def note_bigram_perplexity(midi_file):
         return 0
     for i in range(N):
         currNote = notes[i]
-        if i == 0 & notes[i] in unigramTransitionProbabilities:
-            prob = np.log(unigramTransitionProbabilities[notes[i]])
+        if i == 0:
+            prob = 0
         else:
             prevNote = notes[i-1]
             nextNotes = bigramTransitions.get(prevNote,{})
             if nextNotes == {}:
-                prob = 0
+                prob = 1e-10
             else:
                 index = nextNotes.index(currNote)
-                prob = np.log(bigramTransitionProbabilities[prevNote][index])
-        logProbSum += prob
+                prob = bigramTransitionProbabilities[prevNote][index]
+            logProbSum += np.log(prob)
     avgNegLogL = -logProbSum/N
     perplexity = np.exp(avgNegLogL)
     return perplexity
-    # Can use regular numpy.log (i.e., natural logarithm)
 
 # %% [markdown]
 # 5. Implement a second-order Markov chain, i.e., one which estimates p(next_note | next_previous_note, previous_note); write a function to compute the perplexity of this new model on a midi file. 
@@ -254,10 +253,10 @@ def note_trigram_probability(midi_files):
         noteSequences.append(notes)
     
     for sequence in noteSequences:
-        for i in range(len(sequence)-2):
-            nextPrev = sequence[i]
-            prev = sequence[i+1]
-            nextNote = sequence[i+2]
+        for i in range(len(sequence)-1,1,-1):
+            nextPrev = sequence[i-2]
+            prev = sequence[i-1]
+            nextNote = sequence[i]
             prevTuple = (nextPrev,prev)
             trigramTransCount[prevTuple][nextNote] += 1
     
@@ -276,7 +275,7 @@ def note_trigram_probability(midi_files):
 
 # %%
 def note_trigram_perplexity(midi_file):
-    train_files = [f for f in midi_files if f!= midi_file]
+    train_files = [f for f in midi_files if f != midi_file]
     unigramProbabilities = note_unigram_probability(train_files)
     bigramTransitions, bigramTransitionProbabilities = note_bigram_probability(train_files)
     trigramTransitions, trigramTransitionProbabilities = note_trigram_probability(train_files)
@@ -288,41 +287,38 @@ def note_trigram_perplexity(midi_file):
         return 0
     
     for i in range(N):
-        nextNote = notes[i]
+        currNote = notes[i]
         if i == 0:
-            if nextNote in unigramProbabilities:
-                prob = np.log(unigramProbabilities[notes[i]])
-            else:
-                prob = 0
+            # Use unigram probability for first note
+            prob = unigramProbabilities.get(currNote, 1e-10)
         elif i == 1:
+            # Use bigram probability for second note
             prevNote = notes[i-1]
-            if nextNote in bigramTransitions.get(prevNote,{}):
-                index = bigramTransitions[prevNote].index(nextNote)
-                prob = np.log(bigramTransitionProbabilities[notes[i-1]][index])
+            nextNotes = bigramTransitions.get(prevNote, [])
+            if currNote in nextNotes:
+                index = nextNotes.index(currNote)
+                prob = bigramTransitionProbabilities[prevNote][index]
             else:
-                prob =0
+                # Unseen bigram
+                prob = 1e-10
         else:
+            # Use trigram probability for subsequent notes
             nextPrev = notes[i-2]
             prevNote = notes[i-1]
             prevTuple = (nextPrev, prevNote)
-            if nextNote in trigramTransitions.get(prevTuple,{}):
-                index = trigramTransitions[prevTuple].index(nextNote)
-                prob = np.log(trigramTransitionProbabilities[(nextPrev,prevNote)][index])
+            nextNotes = trigramTransitions.get(prevTuple, [])
+            if currNote in nextNotes:
+                index = nextNotes.index(currNote)
+                prob = trigramTransitionProbabilities[prevTuple][index]
             else:
-                prob =0
-
-        logProbSum += prob
-
-
-            
-
-
-    avgNegLogL = -logProbSum/N
+                # Unseen trigram
+                prob = 1e-10
+        
+        logProbSum += np.log(prob)
+    
+    avgNegLogL = -logProbSum / N  # Normalize by total number of notes
     perplexity = np.exp(avgNegLogL)
     return perplexity
-
-
-    # Q5b: Your code goes here
 
 # %% [markdown]
 # 6. Our model currently doesn’t have any knowledge of beats. Write a function that extracts beat lengths and outputs a list of [(beat position; beat length)] values.
@@ -355,7 +351,6 @@ def beat_extraction(midi_file):
     tokens = tokenizer(midi)[0].tokens
     
     beat_info = []
-    current_position = 0
     i = 0
     
     while i < len(tokens):
@@ -444,8 +439,8 @@ def beat_pos_bigram_probability(midi_files):
     
     for midi_file in midi_files:
         beat_info = beat_extraction(midi_file)
-        for position, beat_length in beat_info:
-            bigramBeatPosCounts[position][beat_length] += 1 
+        for beat in beat_info:
+            bigramBeatPosCounts[beat[0]][beat[1]] += 1 
 
     for position in bigramBeatPosCounts:
         beat_lengths = list(bigramBeatPosCounts[position].keys())
@@ -459,64 +454,47 @@ def beat_pos_bigram_probability(midi_files):
 
 # %%
 def beat_bigram_perplexity(midi_file):
-    bigramBeatTransitions, bigramBeatTransitionProbabilities = beat_bigram_probability(midi_files)
-    bigramBeatPosTransitions, bigramBeatPosTransitionProbabilities = beat_pos_bigram_probability(midi_files)
-    # Q8b: Your code goes here
-    # Hint: one more probability function needs to be computed
-
+    train_files = [f for f in midi_files if f != midi_file]
+    
+    # Get both models
+    beat_trans, beat_probs = beat_bigram_probability(train_files)
+    pos_trans, pos_probs = beat_pos_bigram_probability(train_files)
+    
     beat_info = beat_extraction(midi_file)
     if not beat_info:
-        return (float('inf'), float('inf'))
+        return float('inf'), float('inf')  # Handle empty files
     
-    log_prob_bigram = 0.0
-    log_prob_pos_bigram = 0.0
-    N = len(beat_info)
-
-    first_length = beat_info[0][1]
-    all_lengths = list(bigramBeatTransitions.keys())
-    unigram_probs = [sum(beat_counts.values()) for beat_counts in bigramBeatTransitions.values()]
-    unigram_total = sum(unigram_probs)
-    unigram_probs = [p/unigram_total for p in unigram_probs]
-
-    if first_length in all_lengths:
-        idx = all_lengths.index(first_length)
-        prob = unigram_probs[idx]
-    else:
-        prob = 1e-10
-    
-    log_prob_bigram += np.log(prob)
-    log_prob_pos_bigram += np.log(prob)
-    
-    for i in range(1, len(beat_info)):
-        current_pos, current_length = beat_info[i]
-        prev_length = beat_info[i-1][1]
-        if prev_length in bigramBeatTransitions:
-            if current_length in bigramBeatTransitions[prev_length]:
-                idx = bigramBeatTransitions[prev_length].index(current_length)
-                prob1 = bigramBeatTransitionProbabilities[prev_length][idx]
-            else:
-                prob1 = 1e-10
+    # Calculate perplexity for model 1 (beat length bigram)
+    log_prob_sum1 = 0.0
+    for i in range(len(beat_info)):
+        curr_len = beat_info[i][1]
+        if i == 0:
+            # For first beat, use unigram probability (not implemented here)
+            prob = 1.0 / len(beat_trans)  # Simple uniform prior
         else:
-            prob1 = 1e-10
-        
-        # Model 2: p(length | position)
-        if current_pos in bigramBeatPosTransitions:
-            if current_length in bigramBeatPosTransitions[current_pos]:
-                idx = bigramBeatPosTransitions[current_pos].index(current_length)
-                prob2 = bigramBeatPosTransitionProbabilities[current_pos][idx]
+            prev_len = beat_info[i-1][1]
+            if prev_len in beat_trans and curr_len in beat_trans[prev_len]:
+                idx = beat_trans[prev_len].index(curr_len)
+                prob = beat_probs[prev_len][idx]
             else:
-                prob2 = 1e-10
+                prob = 1e-10  # Smoothing
+        log_prob_sum1 += np.log(prob)
+    
+    perplexity1 = np.exp(-log_prob_sum1 / len(beat_info))
+    
+    # Calculate perplexity for model 2 (position-length)
+    log_prob_sum2 = 0.0
+    for position, length in beat_info:
+        if position in pos_trans and length in pos_trans[position]:
+            idx = pos_trans[position].index(length)
+            prob = pos_probs[position][idx]
         else:
-            prob2 = 1e-10
-        log_prob_bigram += np.log(prob1)
-        log_prob_pos_bigram += np.log(prob2)
-    # perplexity for Q7
-    perplexity_Q7 = np.exp(-log_prob_bigram/N)
+            prob = 1e-10  # Smoothing
+        log_prob_sum2 += np.log(prob)
     
-    # perplexity for Q8
-    perplexity_Q8 = np.exp(-log_prob_pos_bigram/N)
+    perplexity2 = np.exp(-log_prob_sum2 / len(beat_info))
     
-    return perplexity_Q7, perplexity_Q8
+    return perplexity1, perplexity2
 
 # %% [markdown]
 # 9. Implement a Markov chain that computes p(beat_length | previous_beat_length, beat_position), and report its perplexity. 
@@ -563,61 +541,63 @@ def beat_trigram_probability(midi_files):
 
 # %%
 def beat_trigram_perplexity(midi_file):
-    bigramBeatPosTransitions, bigramBeatPosTransitionProbabilities = beat_pos_bigram_probability(midi_files)
-    trigramBeatTransitions, trigramBeatTransitionProbabilities = beat_trigram_probability(midi_files)
-    # Q9b: Your code goes here
-    beat_info = beat_extraction(midi_file)
-    if not beat_info:
-        return float('inf')
+    train_files = [f for f in midi_files if f != midi_file]
+    # Get all needed models
+    unigram_counts = defaultdict(int)
+    bigram_trans, bigram_probs = beat_bigram_probability(train_files)
+    trigram_trans, trigram_probs = beat_trigram_probability(train_files)
     
-    # Initialize perplexity calculation
+    beat_info = beat_extraction(midi_file)
+    if len(beat_info) < 3:
+        return float('inf')  # Not enough data for trigram model
+    
     log_prob = 0.0
     N = len(beat_info)
     
-    # Process first beat (use uniform probability)
+    # First beat - use unigram probability
     first_length = beat_info[0][1]
-    all_lengths = list(set(length for lengths in bigramBeatPosTransitions.values() for length in lengths))
+    # Calculate unigram probabilities (if not available, use uniform)
+    all_lengths = list(set(length for lengths in bigram_trans.values() for length in lengths))
     prob = 1/len(all_lengths) if all_lengths else 1e-10
     log_prob += np.log(prob)
     
-    # Process remaining beats
-    for i in range(1, N):
-        prev_length = beat_info[i-1][1]
-        current_pos = beat_info[i][0]
-        current_length = beat_info[i][1]
-        
-        # Try trigram model first
-        if (prev_length, current_pos) in trigramBeatTransitions:
-            if current_length in trigramBeatTransitions[(prev_length, current_pos)]:
-                idx = trigramBeatTransitions[(prev_length, current_pos)].index(current_length)
-                prob = trigramBeatTransitionProbabilities[(prev_length, current_pos)][idx]
-            else:
-                # Fall back to position-based model
-                if current_pos in bigramBeatPosTransitions:
-                    if current_length in bigramBeatPosTransitions[current_pos]:
-                        idx = bigramBeatPosTransitions[current_pos].index(current_length)
-                        prob = bigramBeatPosTransitionProbabilities[current_pos][idx]
-                    else:
-                        prob = 1e-10
-                else:
-                    prob = 1e-10
+    # Second beat - use bigram probability
+    if len(beat_info) > 1:
+        prev_length = beat_info[0][1]
+        current_length = beat_info[1][1]
+        if prev_length in bigram_trans and current_length in bigram_trans[prev_length]:
+            idx = bigram_trans[prev_length].index(current_length)
+            prob = bigram_probs[prev_length][idx]
         else:
-            # Fall back to position-based model
-            if current_pos in bigramBeatPosTransitions:
-                if current_length in bigramBeatPosTransitions[current_pos]:
-                    idx = bigramBeatPosTransitions[current_pos].index(current_length)
-                    prob = bigramBeatPosTransitionProbabilities[current_pos][idx]
-                else:
-                    prob = 1e-10
-            else:
-                prob = 1e-10
-        
+            prob = 1e-10
         log_prob += np.log(prob)
     
-    # Calculate perplexity
+    # Remaining beats - use trigram probability with bigram fallback
+    for i in range(2, len(beat_info)):
+        prev_prev_length = beat_info[i-2][1]
+        prev_length = beat_info[i-1][1]
+        current_length = beat_info[i][1]
+        
+        # Try trigram first
+        if (prev_prev_length, prev_length) in trigram_trans:
+            if current_length in trigram_trans[(prev_prev_length, prev_length)]:
+                idx = trigram_trans[(prev_prev_length, prev_length)].index(current_length)
+                prob = trigram_probs[(prev_prev_length, prev_length)][idx]
+            else:
+                prob = 1e-10
+        else:
+            prob = 1e-10
+        
+        # Fall back to bigram if trigram probability is too small
+        if prob < 1e-10:
+            if prev_length in bigram_trans and current_length in bigram_trans[prev_length]:
+                idx = bigram_trans[prev_length].index(current_length)
+                prob = bigram_probs[prev_length][idx]
+        
+        log_prob += np.log(max(prob, 1e-10))  # Ensure no log(0)
+    
     perplexity = np.exp(-log_prob / N)
     return perplexity
-    
 
 # %% [markdown]
 # 10. Use the model from Q5 to generate N notes, and the model from Q8 to generate beat lengths for each note. Save the generated music as a midi file (see code from workbook1) as q10.mid. Remember to reset the beat position to 0 when reaching the end of a bar.
@@ -631,73 +611,57 @@ def beat_trigram_perplexity(midi_file):
 
 # %%
 def music_generate(length):
-    unigramProbabilities = note_unigram_probability(midi_files)
-    bigramTransitions, bigramTransitionProbabilities = note_bigram_probability(midi_files)
-    trigramTransitions, trigramTransitionProbabilities = note_trigram_probability(midi_files)
     
-    bigramBeatPosTransitions, bigramBeatPosTransitionProbabilities = beat_pos_bigram_probability(midi_files)
+    # Load trained models
+    note_trans, note_probs = note_bigram_probability(midi_files)
+    pos_trans, pos_probs = beat_pos_bigram_probability(midi_files)
     
+    # Initialize MIDI parameters
     track = 0
     channel = 0
     tempo = 120  # BPM
+    time = 0     # Start time in beats
     volume = 100
-    beat_position = 0
     
+    # Create MIDI file
     midi = MIDIFile(1)
-    midi.addTempo(track, 0, tempo)
+    midi.addTempo(track, time, tempo)
     
-    sampled_notes = []
-    sampled_beats = []
+    # Initialize generation with random starting note
+    current_note = random.choice(list(note_trans.keys()))
+    current_beat_pos = 0  # Position within measure (0-31 for 4/4 time)
     
-    current_note = np.random.choice(list(unigramProbabilities.keys()), 
-                                  p=list(unigramProbabilities.values()))
-    sampled_notes.append(current_note)
-    
-    if 0 in bigramBeatPosTransitions:
-        current_beat_length = np.random.choice(bigramBeatPosTransitions[0],
-                                             p=bigramBeatPosTransitionProbabilities[0])
-    else:
-        current_beat_length = 4  
-    sampled_beats.append(current_beat_length)
-    
-    midi.addNote(track, channel, current_note, beat_position/8, current_beat_length/8, volume)
-    beat_position += current_beat_length
-    
-    for i in range(1, length):
-        if i >= 2 and (sampled_notes[i-2], sampled_notes[i-1]) in trigramTransitions:
-            next_note = np.random.choice(
-                trigramTransitions[(sampled_notes[i-2], sampled_notes[i-1])],
-                p=trigramTransitionProbabilities[(sampled_notes[i-2], sampled_notes[i-1])]
-            )
-        elif sampled_notes[i-1] in bigramTransitions:
-            next_note = np.random.choice(
-                bigramTransitions[sampled_notes[i-1]],
-                p=bigramTransitionProbabilities[sampled_notes[i-1]]
-            )
+    for _ in range(length):
+        # 1. Generate beat length based on current position
+        if current_beat_pos in pos_trans:
+            beat_length = random.choices(
+                pos_trans[current_beat_pos],
+                weights=pos_probs[current_beat_pos],
+                k=1
+            )[0]
         else:
-            next_note = np.random.choice(list(unigramProbabilities.keys()),
-                                       p=list(unigramProbabilities.values()))
+            beat_length = 4  # Default quarter note
         
-        sampled_notes.append(next_note)
+        # 2. Add note to MIDI (convert MidiTok beat length to MIDIUtil units)
+        midi.addNote(track, channel, current_note, time, beat_length/8, volume)
         
-        if beat_position in bigramBeatPosTransitions:
-            current_beat_length = np.random.choice(
-                bigramBeatPosTransitions[beat_position],
-                p=bigramBeatPosTransitionProbabilities[beat_position]
-            )
+        # 3. Generate next note
+        if current_note in note_trans:
+            current_note = random.choices(
+                note_trans[current_note],
+                weights=note_probs[current_note],
+                k=1
+            )[0]
         else:
-            current_beat_length = 4 
-        sampled_beats.append(current_beat_length)
+            current_note = random.choice(list(note_trans.keys()))
         
-        midi.addNote(track, channel, next_note, beat_position/8, current_beat_length/8, volume)
+        # 4. Update timing state
+        time += beat_length/8  # MIDIUtil uses 1 beat = 1 unit
+        current_beat_pos = (current_beat_pos + beat_length) % 32  # 4/4 time
         
-        beat_position += current_beat_length
-        if beat_position >= 32: 
-            beat_position = 0
-    
+    # Save MIDI file
     with open("q10.mid", "wb") as output_file:
         midi.writeFile(output_file)
     
-    return sampled_notes, sampled_beats
 
 
